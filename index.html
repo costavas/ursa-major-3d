@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!--
+    Ursa Major 3D Interactive Visualization
+    Created by Constantino Baikouzis
+    Website: https://two575.webnode.page/
+    All rights reserved
+    -->
+    <title>Ursa Major Interactive</title>
+    <meta charset="UTF-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: black;
+            overflow: hidden;
+        }
+        canvas { 
+            display: block; 
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 18px;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+    Ursa Major - Drag/touch to rotate, pinch/wheel to zoom<br>
+    <span style="font-size: 14px; opacity: 0.8;">
+    This simulation was designed by Constantino Baikouzis<br>
+    <a href="https://two575.webnode.page/" style="color: #aaf;" target="_blank">https://two575.webnode.page/</a>
+    </span>
+    </div>
+    <div style="position: fixed; bottom: 10px; right: 10px; color: white; font-family: Arial; font-size: 12px; pointer-events: none;">
+    © 2024 Constantino Baikouzis
+    </div>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Star data: [RA, Dec, Distance(ly), Color, Name, Magnitude]
+        // Datos verificados y corregidos usando catálogos astronómicos actualizados
+        const stars = [
+            [13.7922, 49.3133, 103.9, 0xFFFFFF, 'η', 1.85],  // Alkaid/Benetnash
+            [13.3986, 54.9253, 82.8, 0xFFFFFF, 'ζ', 2.27],   // Mizar
+            [12.9003, 55.9597, 82.6, 0xFFA500, 'ε', 1.77],   // Alioth
+            [12.2569, 57.0325, 80.5, 0xFFFFFF, 'δ', 3.31],   // Megrez
+            [11.8972, 53.6947, 83.7, 0xFFFFFF, 'γ', 2.44],   // Phecda
+            [11.0306, 56.3825, 79.7, 0xFFFFFF, 'β', 2.37],   // Merak
+            [11.0619, 61.7508, 123.6, 0xFFFFFF, 'α', 1.79]   // Dubhe
+        ];
+
+        function createStar(ra, dec, dist, color, letter, magnitude) {
+            const group = new THREE.Group();
+            
+            // Tamaño basado en magnitud (estrellas más brillantes = mayor tamaño)
+            const size = 0.1 - (magnitude * 0.015);
+            
+            const geometry = new THREE.SphereGeometry(size, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ color: color });
+            const star = new THREE.Mesh(geometry, material);
+            
+            const raRad = ra * 15 * Math.PI/180;
+            const decRad = dec * Math.PI/180;
+            const x = dist * Math.cos(decRad) * Math.cos(raRad) / 15;
+            const y = dist * Math.cos(decRad) * Math.sin(raRad) / 15;
+            const z = dist * Math.sin(decRad) / 15;
+            
+            star.position.set(x, y, z);
+            group.add(star);
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 64;
+            canvas.height = 64;
+            context.fillStyle = 'white';
+            context.font = 'bold 20px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(letter, 32, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            
+            sprite.position.set(x + 0.2, y + 0.2, z + 0.2);
+            sprite.scale.set(1.2, 1.2, 1.2);
+            
+            group.add(sprite);
+
+            return { group, position: new THREE.Vector3(x, y, z) };
+        }
+
+        const starObjects = [];
+        const starPositions = [];
+        
+        // Crear estrellas
+        stars.forEach((star) => {
+            const { group, position } = createStar(...star);
+            scene.add(group);
+            starObjects.push(group);
+            starPositions.push(position);
+        });
+
+        function createLine(start, end) {
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0xff0000,
+                linewidth: 2
+            });
+            const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+            return new THREE.Line(geometry, material);
+        }
+
+        // Conectar estrellas en el orden especificado
+        scene.add(createLine(starPositions[0], starPositions[1])); // η con ζ
+        scene.add(createLine(starPositions[1], starPositions[2])); // ζ con ε
+        scene.add(createLine(starPositions[2], starPositions[3])); // ε con δ
+        scene.add(createLine(starPositions[3], starPositions[4])); // δ con γ
+        scene.add(createLine(starPositions[4], starPositions[5])); // γ con β
+        scene.add(createLine(starPositions[5], starPositions[6])); // β con α
+
+        camera.position.z = 50;
+        scene.rotation.x = Math.PI / 6;
+
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let targetRotationX = Math.PI / 6;
+        let targetRotationY = 0;
+        let currentRotationX = Math.PI / 6;
+        let currentRotationY = 0;
+
+        // Controles de ratón
+        document.addEventListener('mousedown', (e) => {
+            isDragging = true;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaMove = {
+                    x: e.offsetX - previousMousePosition.x,
+                    y: e.offsetY - previousMousePosition.y
+                };
+                targetRotationY += deltaMove.x * 0.01;
+                targetRotationX += deltaMove.y * 0.01;
+            }
+            previousMousePosition = {
+                x: e.offsetX,
+                y: e.offsetY
+            };
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // Controles táctiles
+        document.addEventListener('touchstart', (e) => {
+            previousMousePosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        }, {passive: false});
+
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const deltaMove = {
+                x: e.touches[0].clientX - previousMousePosition.x,
+                y: e.touches[0].clientY - previousMousePosition.y
+            };
+            
+            targetRotationY += deltaMove.x * 0.01;
+            targetRotationX += deltaMove.y * 0.01;
+            
+            previousMousePosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        }, {passive: false});
+
+        // Zoom con pellizco para móviles
+        let initialPinchDistance = null;
+        let initialCameraZ = null;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                initialPinchDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                initialCameraZ = camera.position.z;
+            }
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                const currentDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                
+                if (initialPinchDistance && initialCameraZ) {
+                    const distanceRatio = initialPinchDistance / currentDistance;
+                    camera.position.z = initialCameraZ * distanceRatio;
+                }
+            }
+        });
+
+        document.addEventListener('touchend', () => {
+            initialPinchDistance = null;
+            initialCameraZ = null;
+        });
+
+        // Zoom con rueda del ratón
+        document.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomSpeed = 0.05;
+            camera.position.z *= (1 + Math.sign(e.deltaY) * zoomSpeed);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            currentRotationX += (targetRotationX - currentRotationX) * 0.1;
+            currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+            
+            scene.rotation.x = currentRotationX;
+            scene.rotation.y = currentRotationY;
+
+            starObjects.forEach(group => {
+                if (group.children[1]) {
+                    group.children[1].lookAt(camera.position);
+                }
+            });
+            
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
